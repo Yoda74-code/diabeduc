@@ -31,7 +31,7 @@ File.foreach(generated_xcode_build_settings_path) do |line|
   raise "FLUTTER_ROOT not found in #{generated_xcode_build_settings_path}. Try deleting Generated.xcconfig, then run flutter pub get"
 end
 
-require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root)
+require File.expand_path(File.join('Flutter', 'podhelper.rb'), __dir__)
 
 flutter_ios_podfile_setup
 
@@ -44,5 +44,5 @@ target 'Runner' do
     inherit! :search_paths
   end
 end
-load File.join(File.dirname(__FILE__), 'Flutter','podhelper.rb')
+
 
