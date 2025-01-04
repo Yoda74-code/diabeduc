@@ -97,7 +97,7 @@ dependencies:
   shared_preferences: ^2.3.4
   flutter_localization: ^0.3.0
   google_generative_ai: ^0.4.6
-  flutter_dotenv: ^5.1.0
+  flutter_dotenv: ^5.0.2
   dash_chat_2: ^0.0.20
   sensors_plus: ^6.1.1
   sensors_plus_platform_interface: ^2.0.1

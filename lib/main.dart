@@ -34,7 +34,7 @@ UserModel currentUser = UserModel(fname: "", lname: "", image: "");
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load(fileName: "assets/.env");
+  await dotenv.load(fileName: ".env");
   MainFunctions.sharredPrefs = await SharedPreferences.getInstance();
   sharedPreferences = await SharedPreferences.getInstance();
   runApp(const MyApp());
