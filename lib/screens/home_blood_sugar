@@ -1,0 +1,418 @@
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:flutter_barcode_scanner/flutter_barcode_scanner.dart';
+import 'package:get/get.dart';
+import 'package:flutter/services.dart';
+
+
+class Product {
+  final String? productName;
+  final String? imageUrl;
+  final Map<String, dynamic>? nutriments;
+  final String? servingQuantity;
+  final String? servingSize;
+  final String? comparedToCategory;
+
+  Product({
+    this.productName,
+    this.imageUrl,
+    this.nutriments,
+    this.servingQuantity,
+    this.servingSize,
+    this.comparedToCategory,
+  });
+
+  factory Product.fromJson(Map<String, dynamic> json) {
+    return Product(
+      productName: json['product_name'] ?? 'Product Name Not Found',
+      imageUrl: json['image_front_url'] ?? null,
+      nutriments: json['nutriments'] ?? {},
+      servingQuantity: json['serving_quantity'] ?? '',
+      servingSize: json['serving_size'] ?? '',
+      comparedToCategory: json['compared_to_category'] ?? '',
+    );
+  }
+}
+
+class BloodSugar extends StatefulWidget {
+  const BloodSugar({Key? key}) : super(key: key);
+
+  @override
+  State<BloodSugar> createState() => _BloodSugarState();
+}
+
+class _BloodSugarState extends State<BloodSugar> {
+  late Future<Product?> _productFuture;
+  final TextEditingController _searchController = TextEditingController();
+  late Map<String, String> nutrientTranslations;
+  late List<String> displayedNutrients;
+
+  @override
+  void initState() {
+    super.initState();
+    _productFuture = Future.value(null); // Initialize with null
+    nutrientTranslations = {
+      'Energy': 'Energy'.tr,
+      'Fat': 'Fat'.tr,
+      'Carbohydrates': 'Carbohydrates'.tr,
+      'Sugars': 'Sugars'.tr,
+      'Fiber': 'Fiber'.tr,
+      'Proteins': 'Proteins'.tr,
+      'Salt': 'Salt'.tr,
+    };
+    displayedNutrients = nutrientTranslations.keys.toList();
+  }
+
+  Future<Product?> getProduct(String searchTerm) async {
+    var language = 'en'; // Default language
+    var apiUrl = 'https://world.openfoodfacts.net';
+
+    // Set custom User-Agent header
+    var headers = {
+      'User-Agent': 'diabeduc/1.0 (diabeduc-staging@proton.me)',
+    };
+
+    var response = await http.get(
+      Uri.parse('$apiUrl/api/v2/product/$searchTerm.json?fields=product_name,image_front_url,nutriments,serving_quantity,serving_size,compared_to_category&lang=$language'),
+      headers: headers,
+    );
+
+    if (response.statusCode == 200) {
+      try {
+        // Parse the JSON response
+        var jsonData = json.decode(response.body);
+
+        // Check if product data exists
+        if (jsonData is Map<String, dynamic> && jsonData.containsKey('product')) {
+          var productData = jsonData['product'];
+          if (productData is Map<String, dynamic>) {
+            var product = Product.fromJson(productData);
+            return product;
+          }
+        }
+        throw Exception('Product data not found in the response');
+      } catch (e) {
+        throw Exception('Failed to parse product data: $e');
+      }
+    } else {
+      throw Exception('Failed to fetch product: ${response.statusCode}');
+    }
+  }
+
+  void searchProduct(String searchTerm) {
+    if (searchTerm.isNotEmpty) {
+      setState(() {
+        _productFuture = getProduct(searchTerm);
+      });
+    }
+  }
+
+  // Method to launch barcode scanner
+  Future<void> scanBarcode() async {
+    try {
+      // Scan the barcode
+      String barcode = await FlutterBarcodeScanner.scanBarcode(
+        '#ff6666', // Red color for the scanner overlay
+        'Cancel'.tr, // Text for the cancel button
+        true, // Enable flash
+        ScanMode.BARCODE, // Barcode scanning mode
+      );
+
+      // Set the scanned barcode as the search term
+      _searchController.text = barcode;
+
+      // Perform the product search
+      searchProduct(barcode);
+    } catch (e) {
+      print('Error scanning barcode: $e');
+    }
+  }
+
+  // Method to calculate insulin dosage
+  void calculateInsulin() {
+    // Create a form to fill in insulin dosage values
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        TextEditingController weightController = TextEditingController();
+        TextEditingController targetBGController = TextEditingController();
+        TextEditingController currentBGController = TextEditingController();
+        TextEditingController mealCarbController = TextEditingController();
+
+        return AlertDialog(
+          title: Text('Insulin Dosage Calculation'.tr),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: weightController,
+                  decoration: InputDecoration(labelText: 'Weight (kg)'.tr),
+                  keyboardType: TextInputType.number,
+                ),
+                TextFormField(
+                  controller: targetBGController,
+                  decoration: InputDecoration(labelText: 'Target Blood Glucose (mmol/L)'.tr),
+                  keyboardType: TextInputType.number,
+                ),
+                TextFormField(
+                  controller: currentBGController,
+                  decoration: InputDecoration(labelText: 'Current Blood Glucose (mmol/L)'.tr),
+                  keyboardType: TextInputType.number,
+                ),
+                TextFormField(
+                  controller: mealCarbController,
+                  decoration: InputDecoration(labelText: 'Meal Carbohydrates (grams)'.tr),
+                  keyboardType: TextInputType.number,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('Cancel'.tr),
+            ),
+            TextButton(
+              onPressed: () {
+                // Perform insulin dosage calculation here
+                double weight = double.tryParse(weightController.text) ?? 0;
+                double targetBG = double.tryParse(targetBGController.text) ?? 0;
+                double currentBG = double.tryParse(currentBGController.text) ?? 0;
+                double mealCarb = double.tryParse(mealCarbController.text) ?? 0;
+
+                // Convert blood glucose values from mg/dL to mmol/L
+                targetBG /= 18.0;
+                currentBG /= 18.0;
+
+                // Perform insulin dosage calculation based on input values
+                double totalDailyInsulin = weight * 0.55;
+                double basalInsulin = totalDailyInsulin * 0.4;
+                double bolusInsulin = totalDailyInsulin * 0.6;
+                double insulinPerMeal = bolusInsulin / 3;
+
+                double insulinSensitivityFactor = 1500 / totalDailyInsulin;
+                double correctionDosage = (currentBG - targetBG) / insulinSensitivityFactor;
+
+                double carbToInsulinRatio = 500 / totalDailyInsulin;
+                double carbDosage = mealCarb / carbToInsulinRatio;
+
+                // Display the calculated insulin dosages in a dialog
+                showDialog(
+                  context: context,
+                  builder: (BuildContext context) {
+                    return AlertDialog(
+                      title: Text('Insulin Dosage Calculation'),
+                      content: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text('Total Daily Insulin: ${totalDailyInsulin.toStringAsFixed(2)} units'.tr),
+                          Text('Basal Insulin: ${basalInsulin.toStringAsFixed(2)} units'.tr),
+                          Text('Bolus Insulin: ${bolusInsulin.toStringAsFixed(2)} units'.tr),
+                          Text('Insulin Per Meal: ${insulinPerMeal.toStringAsFixed(2)} units'.tr),
+                          SizedBox(height: 20),
+                          Text('Correction Dosage: ${correctionDosage.toStringAsFixed(2)} units'.tr),
+                          Text('Carbohydrate Dosage: ${carbDosage.toStringAsFixed(2)} units'.tr),
+                        ],
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                          },
+                          child: Text('Close'.tr),
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
+              child: Text('Calculate'.tr),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        actions: [
+          TextButton(
+            onPressed: scanBarcode,
+            child: const Icon(Icons.camera_alt),
+          ),
+        ],
+      ),
+      body: Center(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: TextFormField(
+                        controller: _searchController,
+                        decoration: InputDecoration(
+                          hintText: 'Enter search term'.tr,
+                          suffixIcon: IconButton(
+                            onPressed: () => searchProduct(_searchController.text.trim()),
+                            icon: const Icon(Icons.search),
+                          ),
+                        ),
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                        ),
+                      ),
+
+              FutureBuilder<Product?>(
+                future: _productFuture,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const CircularProgressIndicator();
+                  } else if (snapshot.hasError) {
+                    return Text('Error: ${snapshot.error}');
+                  } else {
+                    final product = snapshot.data;
+                    if (product != null) {
+                      return Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const SizedBox(height: 20),
+                          if (product.imageUrl != null)
+                            Image.network(
+                              product.imageUrl!,
+                              width: 200,
+                              height: 200,
+                            ),
+                          const SizedBox(height: 20),
+                          Text(
+                            product.productName ?? 'Product Name Not Found'.tr,
+                            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 10),
+                          if (product.nutriments != null)
+                            Table(
+                              defaultVerticalAlignment: TableCellVerticalAlignment.top,
+                              border: TableBorder.all(),
+                              columnWidths: const {
+                                0: FlexColumnWidth(),
+                                1: FlexColumnWidth(),
+                                2: FlexColumnWidth(),
+                              },
+                              children: [
+                                TableRow(
+                                  children: [
+                                    TableCell(
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(8.0),
+                                        child: Text(
+                                          'Nutrition facts'.tr,
+                                          style: TextStyle(fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                    ),
+                                    TableCell(
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(8.0),
+                                        child: Text(
+                                          'As sold for 100 g / 100 ml'.tr,
+                                          style: TextStyle(fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                    ),
+                                    TableCell(
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(8.0),
+                                        child: Text(
+                                          '${'As sold per serving'.tr} (${product.servingSize ?? ''})',
+                                          style: TextStyle(fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                ...displayedNutrients.map((nutrient) {
+                                  final translatedNutrient = nutrientTranslations[nutrient]!;
+                                  final nutrientKey = nutrient.replaceAll('_', ' ').toLowerCase();
+                                  final nutrientValue = product.nutriments![nutrientKey];
+                                  final unit = product.nutriments![nutrientKey + '_unit'];
+
+                                  // Replace null values with '?'
+                                  final displayedValue =
+                                      nutrientValue != null ? '$nutrientValue $unit' : '?';
+
+                                  // Calculate value for serving
+                                  double? value =
+                                      double.tryParse(nutrientValue.toString().replaceAll(RegExp(r'\s'), '').split(' ')[0]);
+                                  double asSoldPerServing = 0.0; // Default value
+
+if (product.servingQuantity != null) {
+  try {
+    asSoldPerServing = value != null ? (value / 100 * double.parse(product.servingQuantity!)) : 0.0;
+  } catch (e) {
+    print('Error parsing serving quantity: $e');
+  }
+}
+
+
+                                  return TableRow(
+                                    children: [
+                                      TableCell(
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(8.0),
+                                          child: Text('$translatedNutrient:'),
+                                        ),
+                                      ),
+                                      TableCell(
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(8.0),
+                                          child: Text(displayedValue),
+                                        ),
+                                      ),
+                                      TableCell(
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(8.0),
+                                          child: Text(asSoldPerServing.toStringAsFixed(2) + ' $unit'),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                }).toList(),
+                               
+                              ],
+                            ),
+                        ],
+                      );
+                    } else {
+                      return Text('No product found'.tr);
+                    }
+                  }
+                },
+              ),
+              // Button to trigger insulin dosage calculation
+              ElevatedButton(
+                onPressed: calculateInsulin,
+                child: Text('Calculate Insulin Dosage'.tr),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+void main() {
+  runApp(const MaterialApp(
+    home: BloodSugar(),
+  ));
+}
